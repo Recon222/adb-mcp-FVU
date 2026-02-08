@@ -983,6 +983,24 @@ def add_metadata_property(property_name: str, property_label: str, property_type
     return sendCommand(command)
 
 
+@mcp.tool()
+def get_project_panel_metadata():
+    """
+    Reads the project panel metadata configuration from Premiere Pro.
+
+    This returns information about the metadata display configuration of the
+    Project panel, including which metadata columns are visible and their settings.
+
+    This is useful for understanding what metadata fields are available in the
+    current project before reading or writing clip metadata.
+    """
+
+    command = createCommand("getProjectPanelMetadata", {
+    })
+
+    return sendCommand(command)
+
+
 @mcp.resource("config://get_instructions")
 def get_instructions() -> str:
     """Read this first! Returns information and instructions on how to use Photoshop and this API"""

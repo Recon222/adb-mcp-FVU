@@ -854,6 +854,29 @@ const addMetadataProperty = async (command) => {
     };
 };
 
+const getProjectPanelMetadata = async (command) => {
+    const panelMetadataXml = await app.Metadata.getProjectPanelMetadata();
+
+    // The panel metadata is an XML string describing column configuration.
+    // Attempt to parse it into a more useful format using XMPMeta.
+    let parsed = null;
+    try {
+        const { XMPMeta } = require("uxp").xmp;
+        const xmp = new XMPMeta(panelMetadataXml);
+        // If parsing succeeds, serialize to a compact form
+        parsed = xmp.serialize();
+    } catch (e) {
+        // Not valid XMP -- may be a different XML format.
+        // Return raw string only.
+    }
+
+    return {
+        rawXml: panelMetadataXml,
+        parsed: parsed
+    };
+};
+
+
 const exportSequence = async (command) => {
     const options = command.options;
     const sequenceId = options.sequenceId;
@@ -873,6 +896,7 @@ const commandHandlers = {
     setProjectMetadata,
     setXMPMetadata,
     addMetadataProperty,
+    getProjectPanelMetadata,
     exportSequence,
     moveProjectItemsToBin,
     createBinInActiveProject,
