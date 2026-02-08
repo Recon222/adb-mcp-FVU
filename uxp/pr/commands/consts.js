@@ -35,8 +35,16 @@ const BLEND_MODES = {
     DIVIDE: 26
   };
 
+const METADATA_TYPE = {
+    INTEGER: 0,
+    REAL: 1,
+    TEXT: 2,
+    BOOLEAN: 3,
+};
+
   module.exports = {
     BLEND_MODES,
     TRACK_TYPE,
-    TICKS_PER_SECOND
+    TICKS_PER_SECOND,
+    METADATA_TYPE
 };

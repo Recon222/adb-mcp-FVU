@@ -949,6 +949,40 @@ def set_xmp_metadata(item_name: str, metadata_updates: dict):
     return sendCommand(command)
 
 
+@mcp.tool()
+def add_metadata_property(property_name: str, property_label: str, property_type: str = "Text"):
+    """
+    Adds a custom metadata column/property to the project's metadata schema.
+
+    This creates a new metadata field that appears as a column in the Premiere Pro
+    Project panel. Once created, the field can be populated using set_project_metadata.
+
+    The property is added to the project-level schema and is available for all clips
+    in the project.
+
+    Args:
+        property_name (str): The internal name for the property. This is used as the
+            field identifier in metadata operations. Should not contain spaces.
+            Example: "MyCustomField"
+        property_label (str): The display label shown in the Project panel column header.
+            Example: "My Custom Field"
+        property_type (str, optional): The data type for the property. Defaults to "Text".
+            Valid values:
+            - "Integer" -- Whole number values
+            - "Real" -- Decimal/floating-point number values
+            - "Text" -- String/text values (most common)
+            - "Boolean" -- True/false values
+    """
+
+    command = createCommand("addMetadataProperty", {
+        "propertyName": property_name,
+        "propertyLabel": property_label,
+        "propertyType": property_type
+    })
+
+    return sendCommand(command)
+
+
 @mcp.resource("config://get_instructions")
 def get_instructions() -> str:
     """Read this first! Returns information and instructions on how to use Photoshop and this API"""

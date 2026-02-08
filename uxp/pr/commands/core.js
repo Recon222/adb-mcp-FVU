@@ -3,7 +3,7 @@ const fs = require("uxp").storage.localFileSystem;
 const app = require("premierepro");
 const constants = require("premierepro").Constants;
 
-const {BLEND_MODES, TRACK_TYPE } = require("./consts.js")
+const {BLEND_MODES, TRACK_TYPE, METADATA_TYPE } = require("./consts.js")
 
 const {
     _getSequenceFromId,
@@ -817,6 +817,43 @@ const setXMPMetadata = async (command) => {
     };
 };
 
+const addMetadataProperty = async (command) => {
+    const options = command.options;
+    const propertyName = options.propertyName;
+    const propertyLabel = options.propertyLabel;
+    const propertyType = options.propertyType || "Text";
+
+    // Map string type names to numeric constants.
+    // Try app.Metadata constants first; fall back to local METADATA_TYPE values.
+    const typeMap = {
+        "Integer": (app.Metadata.METADATA_TYPE_INTEGER !== undefined) ? app.Metadata.METADATA_TYPE_INTEGER : METADATA_TYPE.INTEGER,
+        "Real":    (app.Metadata.METADATA_TYPE_REAL    !== undefined) ? app.Metadata.METADATA_TYPE_REAL    : METADATA_TYPE.REAL,
+        "Text":    (app.Metadata.METADATA_TYPE_TEXT    !== undefined) ? app.Metadata.METADATA_TYPE_TEXT    : METADATA_TYPE.TEXT,
+        "Boolean": (app.Metadata.METADATA_TYPE_BOOLEAN !== undefined) ? app.Metadata.METADATA_TYPE_BOOLEAN : METADATA_TYPE.BOOLEAN,
+    };
+
+    const typeValue = typeMap[propertyType];
+    if (typeValue === undefined) {
+        throw new Error(
+            `addMetadataProperty: Invalid propertyType "${propertyType}". ` +
+            `Valid values are: Integer, Real, Text, Boolean`
+        );
+    }
+
+    const success = await app.Metadata.addPropertyToProjectMetadataSchema(
+        propertyName,
+        propertyLabel,
+        typeValue
+    );
+
+    return {
+        propertyName: propertyName,
+        propertyLabel: propertyLabel,
+        propertyType: propertyType,
+        success: success
+    };
+};
+
 const exportSequence = async (command) => {
     const options = command.options;
     const sequenceId = options.sequenceId;
@@ -835,6 +872,7 @@ const commandHandlers = {
     getXMPMetadata,
     setProjectMetadata,
     setXMPMetadata,
+    addMetadataProperty,
     exportSequence,
     moveProjectItemsToBin,
     createBinInActiveProject,
