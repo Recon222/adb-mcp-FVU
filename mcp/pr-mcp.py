@@ -914,6 +914,41 @@ def set_project_metadata(item_name: str, fields: dict):
     return sendCommand(command)
 
 
+@mcp.tool()
+def set_xmp_metadata(item_name: str, metadata_updates: dict):
+    """
+    Writes or updates the embedded XMP metadata on a media file in the project.
+
+    WARNING: This modifies the source media file's embedded metadata (or its sidecar .xmp file).
+    Changes persist even if the clip is removed from the project.
+
+    The metadata_updates dictionary is organized by namespace prefix. Each key is a namespace
+    identifier and each value is a dictionary of property names to values.
+
+    Args:
+        item_name (str): The name of the project item to update XMP metadata on.
+            Example: "interview_01.mp4"
+        metadata_updates (dict): A dictionary organized by namespace with property updates.
+
+            Supported namespace keys:
+            - "dublinCore" -- dc: namespace (title, creator, description, subject, rights)
+            - "xmpBasic" -- xmp: namespace (CreatorTool, Label, Rating)
+            - "dynamicMedia" -- xmpDM: namespace (scene, shotName, logComment, good, tapeName)
+
+            Example: {
+                "dublinCore": {"description": "Final cut interview"},
+                "dynamicMedia": {"scene": "Scene 5", "shotName": "Take 3"}
+            }
+    """
+
+    command = createCommand("setXMPMetadata", {
+        "itemName": item_name,
+        "metadataUpdates": metadata_updates
+    })
+
+    return sendCommand(command)
+
+
 @mcp.resource("config://get_instructions")
 def get_instructions() -> str:
     """Read this first! Returns information and instructions on how to use Photoshop and this API"""

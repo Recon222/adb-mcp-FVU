@@ -766,6 +766,57 @@ const setProjectMetadata = async (command) => {
 };
 
 
+const setXMPMetadata = async (command) => {
+    const options = command.options;
+    const itemName = options.itemName;
+    const metadataUpdates = options.metadataUpdates;
+
+    const project = await app.Project.getActiveProject();
+    const projectItem = await findProjectItem(itemName, project);
+
+    const { XMPMeta, XMPConst } = require("uxp").xmp;
+
+    // Get current XMP metadata
+    const currentXmpXml = await app.Metadata.getXMPMetadata(projectItem);
+    const xmp = new XMPMeta(currentXmpXml);
+
+    // Map namespace keys to XMP namespace URIs
+    const namespaceMap = {
+        "dublinCore": XMPConst.NS_DC,
+        "xmpBasic": XMPConst.NS_XMP,
+        "dynamicMedia": "http://ns.adobe.com/xmp/1.0/DynamicMedia/",
+    };
+
+    const updatedProperties = [];
+
+    for (const [nsKey, properties] of Object.entries(metadataUpdates)) {
+        const nsUri = namespaceMap[nsKey];
+        if (!nsUri) {
+            console.log(`setXMPMetadata: Unknown namespace key "${nsKey}", skipping`);
+            continue;
+        }
+
+        for (const [propName, propValue] of Object.entries(properties)) {
+            xmp.setProperty(nsUri, propName, String(propValue));
+            updatedProperties.push(`${nsKey}.${propName}`);
+        }
+    }
+
+    // Serialize back to XML
+    const newXmpXml = xmp.serialize();
+
+    // Create and execute the set action within a locked transaction
+    execute(() => {
+        const action = app.Metadata.createSetXMPMetadataAction(projectItem, newXmpXml);
+        return [action];
+    }, project);
+
+    return {
+        itemName: itemName,
+        updatedProperties: updatedProperties
+    };
+};
+
 const exportSequence = async (command) => {
     const options = command.options;
     const sequenceId = options.sequenceId;
@@ -783,6 +834,7 @@ const commandHandlers = {
     getProjectMetadata,
     getXMPMetadata,
     setProjectMetadata,
+    setXMPMetadata,
     exportSequence,
     moveProjectItemsToBin,
     createBinInActiveProject,
