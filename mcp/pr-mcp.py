@@ -829,6 +829,31 @@ def import_media(file_paths:list):
 
     return sendCommand(command)
 
+@mcp.tool()
+def get_project_metadata(item_name: str):
+    """
+    Reads the project metadata for a clip/item in the Premiere Pro project.
+
+    Project metadata is Premiere-specific metadata stored in the project file (not embedded in
+    the source media). This includes fields visible in the Project panel columns such as
+    Name, Tape Name, Description, Scene, Shot, Log Note, Good (take), and any custom
+    metadata columns added by the user.
+
+    The metadata is returned as a structured JSON object with field names and values,
+    plus the raw XML string needed for write operations.
+
+    Args:
+        item_name (str): The name of the project item (clip, image, audio file, etc.)
+            as it appears in the Project panel. Example: "interview_01.mp4"
+    """
+
+    command = createCommand("getProjectMetadata", {
+        "itemName": item_name
+    })
+
+    return sendCommand(command)
+
+
 @mcp.resource("config://get_instructions")
 def get_instructions() -> str:
     """Read this first! Returns information and instructions on how to use Photoshop and this API"""

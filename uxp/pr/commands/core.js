@@ -565,6 +565,60 @@ const createBinInActiveProject = async (command) => {
     }, project)
 }
 
+const getProjectMetadata = async (command) => {
+    const options = command.options;
+    const itemName = options.itemName;
+
+    const project = await app.Project.getActiveProject();
+    const projectItem = await findProjectItem(itemName, project);
+
+    // Get raw XML metadata string
+    const metadataXml = await app.Metadata.getProjectMetadata(projectItem);
+
+    // Parse XML to structured JSON using XMPMeta
+    const { XMPMeta, XMPConst } = require("uxp").xmp;
+    const xmp = new XMPMeta(metadataXml);
+
+    const kPProPrivateProjectMetadataURI =
+        "http://ns.adobe.com/premierePrivateProjectMetaData/1.0/";
+
+    // Extract known project metadata fields
+    const fields = {};
+    const fieldNames = [
+        "Column.Intrinsic.Name",
+        "Column.Intrinsic.TapeName",
+        "Column.Intrinsic.LogNote",
+        "Column.Intrinsic.MediaStart",
+        "Column.Intrinsic.MediaEnd",
+        "Column.Intrinsic.MediaDuration",
+        "Column.Intrinsic.VideoInfo",
+        "Column.Intrinsic.AudioInfo",
+        "Column.PropertyText.Description",
+        "Column.PropertyText.Comment",
+        "Column.PropertyText.Scene",
+        "Column.PropertyText.Shot",
+        "Column.PropertyBool.Good",
+    ];
+
+    for (const fieldName of fieldNames) {
+        try {
+            if (xmp.doesPropertyExist(kPProPrivateProjectMetadataURI, fieldName)) {
+                const prop = xmp.getProperty(kPProPrivateProjectMetadataURI, fieldName);
+                fields[fieldName] = prop.value;
+            }
+        } catch (e) {
+            // Skip fields that cannot be read
+        }
+    }
+
+    return {
+        itemName: itemName,
+        fields: fields,
+        rawXml: metadataXml
+    };
+};
+
+
 const exportSequence = async (command) => {
     const options = command.options;
     const sequenceId = options.sequenceId;
@@ -579,6 +633,7 @@ const exportSequence = async (command) => {
 }
 
 const commandHandlers = {
+    getProjectMetadata,
     exportSequence,
     moveProjectItemsToBin,
     createBinInActiveProject,
