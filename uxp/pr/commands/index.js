@@ -23,6 +23,7 @@
 
 const app = require("premierepro");
 const core = require("./core");
+const { getProjectContentInfo } = require("./utils.js");
 
 const getProjectInfo = async () => {
     let project = await app.Project.getActiveProject()
@@ -40,61 +41,6 @@ const getProjectInfo = async () => {
         items
     }
 
-}
-/*
-const getProjectContentInfo2 = async () => {
-    let project = await app.Project.getActiveProject()
-
-    let root = await project.getRootItem()
-    let items = await root.getItems()
-    
-    let out = []
-    for(const item of items) {
-        console.log(item)
-
-        const b = app.FolderItem.cast(item)
-        
-        const isBin = b != undefined
-
-        //todo: it would be good to get more data / info here
-        out.push({name:item.name})
-    }
-
-    return out
-}
-    */
-
-const getProjectContentInfo = async () => {
-    let project = await app.Project.getActiveProject()
-    let root = await project.getRootItem()
-    
-    const processItems = async (parentItem) => {
-        let items = await parentItem.getItems()
-        let out = []
-        
-        for(const item of items) {
-            console.log(item)
-            
-            const folderItem = app.FolderItem.cast(item)
-            const isBin = folderItem != undefined
-            
-            let itemData = {
-                name: item.name,
-                type: isBin ? 'bin' : 'projectItem'
-            }
-            
-            // If it's a bin/folder, recursively get its contents
-            if (isBin) {
-                itemData.items = await processItems(folderItem)
-            }
-            
-            out.push(itemData)
-        }
-        
-        return out
-    }
-    
-    return await processItems(root)
 }
 
 const parseAndRouteCommand = async (command) => {

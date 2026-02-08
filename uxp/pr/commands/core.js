@@ -14,7 +14,8 @@ const {
     findProjectItem,
     execute,
     getTrack,
-    getTrackItems
+    getTrackItems,
+    getProjectContentInfo
 } = require("./utils.js")
 
 const saveProject = async (command) => {
@@ -92,15 +93,16 @@ const addMediaToSequence = async (command) => {
     const videoTrackIndex = options.videoTrackIndex
     const audioTrackIndex = options.audioTrackIndex
   
-    //not sure what this does
-    const limitShift = false
-
-    //let f = ((options.overwrite) ? editor.createOverwriteItemAction : editor.createInsertProjectItemAction).bind(editor)
-    //let action = f(insertItem, insertionTime, videoTrackIndex, audioTrackIndex, limitShift)
     execute(() => {
-        let action = editor.createOverwriteItemAction(insertItem, insertionTime, videoTrackIndex, audioTrackIndex)
+        let action
+        if (options.overwrite) {
+            action = editor.createOverwriteItemAction(insertItem, insertionTime, videoTrackIndex, audioTrackIndex)
+        } else {
+            const limitShift = false
+            action = editor.createInsertProjectItemAction(insertItem, insertionTime, videoTrackIndex, audioTrackIndex, limitShift)
+        }
         return [action]
-    }, project)  
+    }, project)
 }
 
 
@@ -162,7 +164,7 @@ const appendVideoFilter = async (command) => {
         throw new Error(`appendVideoFilter : Requires an active sequence.`)
     }
 
-    let trackItem = await getTrackTrack(sequence, options.videoTrackIndex, options.trackItemIndex, TRACK_TYPE.VIDEO)
+    let trackItem = await getTrack(sequence, options.videoTrackIndex, options.trackItemIndex, TRACK_TYPE.VIDEO)
 
     let effectName = options.effectName
     let properties = options.properties
@@ -299,7 +301,20 @@ const appendVideoTransition = async (command) => {
 
 
 const getProjectInfo = async (command) => {
-    return {}
+    let project = await app.Project.getActiveProject()
+
+    const name = project.name;
+    const path = project.path;
+    const id = project.guid.toString();
+
+    const items = await getProjectContentInfo()
+
+    return {
+        name,
+        path,
+        id,
+        items
+    }
 }
 
 
@@ -472,6 +487,7 @@ const addMarkerToSequence = async (command) => {
     const startTimeTicks = options.startTimeTicks;
     const durationTicks = options.durationTicks;
     const comments = options.comments;
+    const markerType = options.markerType || "Comment";
 
     const sequence = await _getSequenceFromId(sequenceId)
 
@@ -488,7 +504,7 @@ const addMarkerToSequence = async (command) => {
         let start = app.TickTime.createWithTicks(startTimeTicks.toString())
         let duration = app.TickTime.createWithTicks(durationTicks.toString())
 
-        let action = markers.createAddMarkerAction(markerName, "WebLink",  start, duration, comments)
+        let action = markers.createAddMarkerAction(markerName, markerType, start, duration, comments)
         return [action]
     }, project)
 

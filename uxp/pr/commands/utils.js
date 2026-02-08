@@ -393,6 +393,37 @@ const getVideoTrack = async (sequence, trackIndex, clipIndex) => {
 }
     */
 
+const getProjectContentInfo = async () => {
+    let project = await app.Project.getActiveProject()
+    let root = await project.getRootItem()
+
+    const processItems = async (parentItem) => {
+        let items = await parentItem.getItems()
+        let out = []
+
+        for(const item of items) {
+            const folderItem = app.FolderItem.cast(item)
+            const isBin = folderItem != undefined
+
+            let itemData = {
+                name: item.name,
+                type: isBin ? 'bin' : 'projectItem'
+            }
+
+            // If it's a bin/folder, recursively get its contents
+            if (isBin) {
+                itemData.items = await processItems(folderItem)
+            }
+
+            out.push(itemData)
+        }
+
+        return out
+    }
+
+    return await processItems(root)
+}
+
 module.exports = {
     getTrackItems,
     _getSequenceFromId,
@@ -405,4 +436,5 @@ module.exports = {
     getTracks,
     getSequences,
     getTrack,
+    getProjectContentInfo,
 };

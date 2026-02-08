@@ -672,10 +672,9 @@ def add_tint_effect(sequence_id: str, video_track_index: int, track_item_index: 
         "trackItemIndex":track_item_index,
         "effectName":"AE.ADBE Tint",
         "properties":[
-            #{"name":"Map White To", "value":rgb_to_premiere_color(white_map)},
-            #{"name":"Map Black To", "value":rgb_to_premiere_color(black_map)}
-            {"name":"Map Black To", "value":rgb_to_premiere_color(black_map)}
-            #{"name":"Amount to Tint", "value":amount / 100}
+            {"name":"Map Black To", "value":rgb_to_premiere_color(black_map)},
+            {"name":"Map White To", "value":rgb_to_premiere_color(white_map)},
+            {"name":"Amount to Tint", "value":amount}
         ]
     })
 
