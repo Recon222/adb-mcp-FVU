@@ -619,6 +619,108 @@ const getProjectMetadata = async (command) => {
 };
 
 
+const getXMPMetadata = async (command) => {
+    const options = command.options;
+    const itemName = options.itemName;
+
+    const project = await app.Project.getActiveProject();
+    const projectItem = await findProjectItem(itemName, project);
+
+    // Get raw XMP XML metadata string
+    const xmpXml = await app.Metadata.getXMPMetadata(projectItem);
+
+    // Parse XML to structured JSON using XMPMeta
+    const { XMPMeta, XMPConst } = require("uxp").xmp;
+    const xmp = new XMPMeta(xmpXml);
+
+    // Extract metadata organized by namespace
+    const metadata = {};
+
+    // Dublin Core (dc:) -- title, creator, description, subject/keywords
+    const dcFields = {};
+    const dcProps = ["title", "creator", "description", "subject", "rights", "format"];
+    for (const prop of dcProps) {
+        try {
+            if (xmp.doesPropertyExist(XMPConst.NS_DC, prop)) {
+                const val = xmp.getProperty(XMPConst.NS_DC, prop);
+                dcFields[prop] = val.value;
+            }
+        } catch (e) { /* skip */ }
+    }
+    if (Object.keys(dcFields).length > 0) metadata.dublinCore = dcFields;
+
+    // XMP Basic (xmp:) -- CreateDate, ModifyDate, CreatorTool
+    const xmpBasicFields = {};
+    const xmpBasicProps = ["CreateDate", "ModifyDate", "MetadataDate", "CreatorTool", "Label", "Rating"];
+    for (const prop of xmpBasicProps) {
+        try {
+            if (xmp.doesPropertyExist(XMPConst.NS_XMP, prop)) {
+                const val = xmp.getProperty(XMPConst.NS_XMP, prop);
+                xmpBasicFields[prop] = val.value;
+            }
+        } catch (e) { /* skip */ }
+    }
+    if (Object.keys(xmpBasicFields).length > 0) metadata.xmpBasic = xmpBasicFields;
+
+    // Dynamic Media (xmpDM:) -- duration, videoFrameRate, scene, shot, etc.
+    // Note: XMPConst.NS_DM may not be available in all UXP versions, so we use the literal URI
+    const dmNS = "http://ns.adobe.com/xmp/1.0/DynamicMedia/";
+    const dmFields = {};
+    const dmProps = [
+        "duration", "videoFrameRate", "videoFrameSize", "videoPixelAspectRatio",
+        "videoCompressor", "videoFieldOrder", "audioSampleRate", "audioChannelType",
+        "audioCompressor", "scene", "shotName", "shotDate", "shotLocation",
+        "logComment", "startTimecode", "altTimecode", "tapeName",
+        "projectName", "videoAlphaMode", "good"
+    ];
+    for (const prop of dmProps) {
+        try {
+            if (xmp.doesPropertyExist(dmNS, prop)) {
+                const val = xmp.getProperty(dmNS, prop);
+                dmFields[prop] = val.value;
+            }
+        } catch (e) { /* skip */ }
+    }
+    if (Object.keys(dmFields).length > 0) metadata.dynamicMedia = dmFields;
+
+    // EXIF (for camera/photo metadata if present)
+    const exifFields = {};
+    const exifProps = [
+        "Make", "Model", "ExposureTime", "FNumber", "ISOSpeedRatings",
+        "FocalLength", "LensModel", "GPSLatitude", "GPSLongitude",
+        "PixelXDimension", "PixelYDimension"
+    ];
+    for (const prop of exifProps) {
+        try {
+            if (xmp.doesPropertyExist(XMPConst.NS_EXIF, prop)) {
+                const val = xmp.getProperty(XMPConst.NS_EXIF, prop);
+                exifFields[prop] = val.value;
+            }
+        } catch (e) { /* skip */ }
+    }
+    if (Object.keys(exifFields).length > 0) metadata.exif = exifFields;
+
+    // XMP Media Management (xmpMM:) -- DocumentID, InstanceID
+    const mmFields = {};
+    const mmProps = ["DocumentID", "InstanceID", "OriginalDocumentID"];
+    for (const prop of mmProps) {
+        try {
+            if (xmp.doesPropertyExist(XMPConst.NS_XMP_MM, prop)) {
+                const val = xmp.getProperty(XMPConst.NS_XMP_MM, prop);
+                mmFields[prop] = val.value;
+            }
+        } catch (e) { /* skip */ }
+    }
+    if (Object.keys(mmFields).length > 0) metadata.mediaManagement = mmFields;
+
+    return {
+        itemName: itemName,
+        metadata: metadata,
+        rawXml: xmpXml
+    };
+};
+
+
 const exportSequence = async (command) => {
     const options = command.options;
     const sequenceId = options.sequenceId;
@@ -634,6 +736,7 @@ const exportSequence = async (command) => {
 
 const commandHandlers = {
     getProjectMetadata,
+    getXMPMetadata,
     exportSequence,
     moveProjectItemsToBin,
     createBinInActiveProject,

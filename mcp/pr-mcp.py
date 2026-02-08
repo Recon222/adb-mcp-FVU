@@ -854,6 +854,31 @@ def get_project_metadata(item_name: str):
     return sendCommand(command)
 
 
+@mcp.tool()
+def get_xmp_metadata(item_name: str):
+    """
+    Reads the embedded XMP (Extensible Metadata Platform) metadata from a media file in the project.
+
+    XMP metadata is stored directly in the source media file and is cross-application
+    (readable by Photoshop, After Effects, media players, etc.). This includes technical
+    information such as codec, frame rate, resolution, camera model, GPS coordinates,
+    creation date, and Dublin Core fields like title, creator, and description.
+
+    The metadata is returned as a structured JSON object organized by namespace,
+    plus the raw XML string needed for write operations.
+
+    Args:
+        item_name (str): The name of the project item (clip, image, audio file, etc.)
+            as it appears in the Project panel. Example: "interview_01.mp4"
+    """
+
+    command = createCommand("getXMPMetadata", {
+        "itemName": item_name
+    })
+
+    return sendCommand(command)
+
+
 @mcp.resource("config://get_instructions")
 def get_instructions() -> str:
     """Read this first! Returns information and instructions on how to use Photoshop and this API"""
