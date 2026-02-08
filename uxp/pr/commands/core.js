@@ -721,6 +721,51 @@ const getXMPMetadata = async (command) => {
 };
 
 
+const setProjectMetadata = async (command) => {
+    const options = command.options;
+    const itemName = options.itemName;
+    const metadataFields = options.metadataFields;
+
+    const project = await app.Project.getActiveProject();
+    const projectItem = await findProjectItem(itemName, project);
+
+    const { XMPMeta, XMPConst } = require("uxp").xmp;
+
+    const kPProPrivateProjectMetadataURI =
+        "http://ns.adobe.com/premierePrivateProjectMetaData/1.0/";
+
+    // Get current metadata
+    const currentMetadataXml = await app.Metadata.getProjectMetadata(projectItem);
+    const xmp = new XMPMeta(currentMetadataXml);
+
+    // Build the updatedFields array and set each property
+    const updatedFields = [];
+
+    for (const [fieldName, fieldValue] of Object.entries(metadataFields)) {
+        xmp.setProperty(kPProPrivateProjectMetadataURI, fieldName, String(fieldValue));
+        updatedFields.push(fieldName);
+    }
+
+    // Serialize the modified XMP back to XML string
+    const newMetadataXml = xmp.serialize();
+
+    // Create and execute the set action within a locked transaction
+    execute(() => {
+        const action = app.Metadata.createSetProjectMetadataAction(
+            projectItem,
+            newMetadataXml,
+            updatedFields
+        );
+        return [action];
+    }, project);
+
+    return {
+        itemName: itemName,
+        updatedFields: updatedFields
+    };
+};
+
+
 const exportSequence = async (command) => {
     const options = command.options;
     const sequenceId = options.sequenceId;
@@ -737,6 +782,7 @@ const exportSequence = async (command) => {
 const commandHandlers = {
     getProjectMetadata,
     getXMPMetadata,
+    setProjectMetadata,
     exportSequence,
     moveProjectItemsToBin,
     createBinInActiveProject,

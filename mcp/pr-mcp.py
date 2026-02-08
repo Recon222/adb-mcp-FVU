@@ -879,6 +879,41 @@ def get_xmp_metadata(item_name: str):
     return sendCommand(command)
 
 
+@mcp.tool()
+def set_project_metadata(item_name: str, fields: dict):
+    """
+    Writes or updates project metadata fields on a clip/item in the Premiere Pro project.
+
+    Project metadata is Premiere-specific metadata stored in the project file. This tool
+    allows setting values for standard fields like Description, Scene, Shot, Log Note,
+    and any custom metadata columns.
+
+    Args:
+        item_name (str): The name of the project item to update metadata on.
+            Example: "interview_01.mp4"
+        fields (dict): A dictionary of field names and their new values.
+            Keys are the metadata field paths, values are the string values to set.
+
+            Common field names:
+            - "Column.Intrinsic.TapeName" -- Tape name
+            - "Column.Intrinsic.LogNote" -- Log note
+            - "Column.PropertyText.Description" -- Description
+            - "Column.PropertyText.Comment" -- Comment
+            - "Column.PropertyText.Scene" -- Scene name/number
+            - "Column.PropertyText.Shot" -- Shot/take name
+            - "Column.PropertyBool.Good" -- Good take flag ("true" or "false")
+
+            Example: {"Column.PropertyText.Description": "Final interview", "Column.PropertyText.Scene": "Scene 5"}
+    """
+
+    command = createCommand("setProjectMetadata", {
+        "itemName": item_name,
+        "metadataFields": fields
+    })
+
+    return sendCommand(command)
+
+
 @mcp.resource("config://get_instructions")
 def get_instructions() -> str:
     """Read this first! Returns information and instructions on how to use Photoshop and this API"""
