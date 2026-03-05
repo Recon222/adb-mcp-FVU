@@ -220,9 +220,9 @@ const _exportFrame = async (sequence, filePath, seconds) => {
     let p = window.path.parse(filePath)
     let t = app.TickTime.createWithSeconds(seconds)
 
-    let out = await app.Exporter.exportSequenceFrame(sequence, t, p.base, p.dir, size.width, size.height)
+    let out = await app.Exporter.exportSequenceFrame(sequence, t, p.name, p.dir, size.width, size.height)
 
-    let ps = `${p.dir}${window.path.sep}${p.base}`
+    let ps = `${p.dir}${window.path.sep}${p.name}`
     let outPath = `${ps}.${fileType}`
 
     if(!out) {
