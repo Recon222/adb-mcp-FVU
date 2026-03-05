@@ -32,3 +32,6 @@ Temporary Items
 
 # Windows null device artifact
 nul
+
+# pr-cli has its own repo
+pr-cli/
