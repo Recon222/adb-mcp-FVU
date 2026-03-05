@@ -877,6 +877,284 @@ const getProjectPanelMetadata = async (command) => {
 };
 
 
+const getClipEffects = async (command) => {
+    const options = command.options;
+    const id = options.sequenceId;
+    const trackIndex = options.trackIndex;
+    const trackItemIndex = options.trackItemIndex;
+    const trackType = options.trackType || TRACK_TYPE.VIDEO;
+
+    const sequence = await _getSequenceFromId(id);
+
+    if (!sequence) {
+        throw new Error("getClipEffects: Requires a valid sequence.");
+    }
+
+    const trackItem = await getTrack(sequence, trackIndex, trackItemIndex, trackType);
+    const componentChain = await trackItem.getComponentChain();
+    const count = componentChain.getComponentCount();
+
+    const effects = [];
+    for (let i = 0; i < count; i++) {
+        const component = componentChain.getComponentAtIndex(i);
+        const matchName = await component.getMatchName();
+        const displayName = await component.getDisplayName();
+        const paramCount = component.getParamCount();
+
+        effects.push({
+            index: i,
+            matchName: matchName,
+            displayName: displayName,
+            paramCount: paramCount
+        });
+    }
+
+    return { effects };
+};
+
+const _serializeParamValue = (value) => {
+    if (value === null || value === undefined) {
+        return null;
+    }
+
+    // Check if it's a nested { value: ... } structure from a Keyframe
+    if (typeof value === 'object' && value.value !== undefined && !(value.x !== undefined || value.red !== undefined)) {
+        return _serializeParamValue(value.value);
+    }
+
+    // PointF -- has x and y properties
+    if (typeof value === 'object' && value.x !== undefined && value.y !== undefined) {
+        return { x: value.x, y: value.y, _type: "point" };
+    }
+
+    // Color -- has red, green, blue properties
+    if (typeof value === 'object' && value.red !== undefined && value.green !== undefined && value.blue !== undefined) {
+        return {
+            red: value.red,
+            green: value.green,
+            blue: value.blue,
+            alpha: value.alpha !== undefined ? value.alpha : 1.0,
+            _type: "color"
+        };
+    }
+
+    // Primitive types (number, string, boolean) pass through directly
+    if (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean') {
+        return value;
+    }
+
+    // Fallback: try to convert to string
+    try {
+        return String(value);
+    } catch (e) {
+        return null;
+    }
+};
+
+const getEffectParameters = async (command) => {
+    const options = command.options;
+    const id = options.sequenceId;
+    const trackIndex = options.trackIndex;
+    const trackItemIndex = options.trackItemIndex;
+    const effectMatchName = options.effectMatchName;
+    const trackType = options.trackType || TRACK_TYPE.VIDEO;
+
+    const sequence = await _getSequenceFromId(id);
+
+    if (!sequence) {
+        throw new Error("getEffectParameters: Requires a valid sequence.");
+    }
+
+    const trackItem = await getTrack(sequence, trackIndex, trackItemIndex, trackType);
+    const componentChain = await trackItem.getComponentChain();
+    const count = componentChain.getComponentCount();
+
+    // Find the component by match name
+    let targetComponent = null;
+    let componentIndex = -1;
+    for (let i = 0; i < count; i++) {
+        const component = componentChain.getComponentAtIndex(i);
+        const matchName = await component.getMatchName();
+        if (matchName === effectMatchName) {
+            targetComponent = component;
+            componentIndex = i;
+            break;
+        }
+    }
+
+    if (!targetComponent) {
+        throw new Error(
+            `getEffectParameters: Effect with match name "${effectMatchName}" not found on this clip. ` +
+            `Use get_clip_effects to see available effects.`
+        );
+    }
+
+    const displayName = await targetComponent.getDisplayName();
+    const paramCount = targetComponent.getParamCount();
+
+    const parameters = [];
+    for (let j = 0; j < paramCount; j++) {
+        const param = targetComponent.getParam(j);
+
+        // Get the start/default value
+        let currentValue = null;
+        try {
+            const startKeyframe = await param.getStartValue();
+            if (startKeyframe && startKeyframe.value !== undefined) {
+                currentValue = _serializeParamValue(startKeyframe.value);
+            }
+        } catch (e) {
+            // Some params may not support getStartValue; skip gracefully
+        }
+
+        // Check if the parameter is time-varying (keyframed)
+        let isTimeVarying = false;
+        try {
+            isTimeVarying = param.isTimeVarying();
+        } catch (e) {
+            // Some params may not support this check
+        }
+
+        // Check if keyframes are supported
+        let keyframesSupported = false;
+        try {
+            keyframesSupported = await param.areKeyframesSupported();
+        } catch (e) {
+            // Some params may not support this check
+        }
+
+        parameters.push({
+            index: j,
+            displayName: param.displayName,
+            value: currentValue,
+            isTimeVarying: isTimeVarying,
+            keyframesSupported: keyframesSupported
+        });
+    }
+
+    return {
+        effectMatchName: effectMatchName,
+        effectDisplayName: displayName,
+        effectIndex: componentIndex,
+        parameters: parameters
+    };
+};
+
+const setEffectParameter = async (command) => {
+    const options = command.options;
+    const id = options.sequenceId;
+    const trackIndex = options.trackIndex;
+    const trackItemIndex = options.trackItemIndex;
+    const effectMatchName = options.effectMatchName;
+    const paramName = options.paramName;
+    let value = options.value;
+    const trackType = options.trackType || TRACK_TYPE.VIDEO;
+
+    const project = await app.Project.getActiveProject();
+    const sequence = await _getSequenceFromId(id);
+
+    if (!sequence) {
+        throw new Error("setEffectParameter: Requires a valid sequence.");
+    }
+
+    const trackItem = await getTrack(sequence, trackIndex, trackItemIndex, trackType);
+
+    // Find the param first so we can give a clear error if not found
+    const param = await getParam(trackItem, effectMatchName, paramName);
+
+    if (!param) {
+        throw new Error(
+            `setEffectParameter: Parameter "${paramName}" not found on effect "${effectMatchName}". ` +
+            `Use get_effect_parameters to see available parameters.`
+        );
+    }
+
+    // Handle PointF values -- convert {x, y} dict to actual value for createKeyframe
+    if (typeof value === 'object' && value !== null) {
+        if (value.x !== undefined && value.y !== undefined) {
+            // Point value -- createKeyframe should accept {x, y} objects
+            value = value;
+        } else if (value.red !== undefined && value.green !== undefined && value.blue !== undefined) {
+            // Color value -- pass through for createKeyframe
+            value = value;
+        }
+    }
+
+    const keyframe = await param.createKeyframe(value);
+
+    execute(() => {
+        const action = param.createSetValueAction(keyframe);
+        return [action];
+    }, project);
+
+    return {
+        effectMatchName: effectMatchName,
+        paramName: paramName,
+        valueSet: value
+    };
+};
+
+const getEffectParameterValue = async (command) => {
+    const options = command.options;
+    const id = options.sequenceId;
+    const trackIndex = options.trackIndex;
+    const trackItemIndex = options.trackItemIndex;
+    const effectMatchName = options.effectMatchName;
+    const paramName = options.paramDisplayName;
+    const timeTicks = options.timeTicks || 0;
+    const trackType = options.trackType || TRACK_TYPE.VIDEO;
+
+    const sequence = await _getSequenceFromId(id);
+
+    if (!sequence) {
+        throw new Error("getEffectParameterValue: Requires a valid sequence.");
+    }
+
+    const trackItem = await getTrack(sequence, trackIndex, trackItemIndex, trackType);
+
+    // Use the existing getParam utility to find the parameter
+    const param = await getParam(trackItem, effectMatchName, paramName);
+
+    if (!param) {
+        throw new Error(
+            `getEffectParameterValue: Parameter "${paramName}" not found on effect "${effectMatchName}". ` +
+            `Use get_effect_parameters to see available parameters.`
+        );
+    }
+
+    // Create a TickTime for the requested time
+    const tickTime = app.TickTime.createWithTicks(timeTicks.toString());
+
+    // Get the value at the specified time
+    const rawValue = await param.getValueAtTime(tickTime);
+    const value = _serializeParamValue(rawValue);
+
+    // Also get metadata about the parameter
+    let isTimeVarying = false;
+    try {
+        isTimeVarying = param.isTimeVarying();
+    } catch (e) {
+        // Skip
+    }
+
+    let keyframesSupported = false;
+    try {
+        keyframesSupported = await param.areKeyframesSupported();
+    } catch (e) {
+        // Skip
+    }
+
+    return {
+        effectMatchName: effectMatchName,
+        paramName: paramName,
+        timeTicks: timeTicks,
+        value: value,
+        isTimeVarying: isTimeVarying,
+        keyframesSupported: keyframesSupported,
+        displayName: param.displayName
+    };
+};
+
 const exportSequence = async (command) => {
     const options = command.options;
     const sequenceId = options.sequenceId;
@@ -897,6 +1175,10 @@ const commandHandlers = {
     setXMPMetadata,
     addMetadataProperty,
     getProjectPanelMetadata,
+    getClipEffects,
+    getEffectParameters,
+    setEffectParameter,
+    getEffectParameterValue,
     exportSequence,
     moveProjectItemsToBin,
     createBinInActiveProject,

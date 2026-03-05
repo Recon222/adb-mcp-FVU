@@ -1001,6 +1001,206 @@ def get_project_panel_metadata():
     return sendCommand(command)
 
 
+@mcp.tool()
+def get_clip_effects(
+    sequence_id: str,
+    track_index: int,
+    track_item_index: int,
+    track_type: str = "VIDEO"
+):
+    """
+    Lists all effects and components applied to a clip on the timeline.
+
+    Returns an array of effects/components including built-in fixed effects
+    (Motion, Opacity) and any user-added video effects. Each effect includes
+    its match name (stable internal identifier), display name (human-readable),
+    parameter count, and index in the component chain.
+
+    The match name is the stable identifier used by other effect parameter tools
+    (e.g., "AE.ADBE Motion" for the Motion effect, "AE.ADBE Opacity" for Opacity).
+
+    Args:
+        sequence_id (str): The ID of the sequence containing the clip.
+        track_index (int): The index of the track containing the clip.
+            Track indices start at 0.
+        track_item_index (int): The index of the clip within the track.
+            Clip indices start at 0 for the first clip and increment left to right.
+        track_type (str, optional): The type of track. Defaults to "VIDEO".
+            Valid values: "VIDEO", "AUDIO"
+    """
+
+    command = createCommand("getClipEffects", {
+        "sequenceId": sequence_id,
+        "trackIndex": track_index,
+        "trackItemIndex": track_item_index,
+        "trackType": track_type
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def get_effect_parameters(
+    sequence_id: str,
+    track_index: int,
+    track_item_index: int,
+    effect_match_name: str,
+    track_type: str = "VIDEO"
+):
+    """
+    Lists all parameters for a specific effect on a clip.
+
+    Returns detailed information about each parameter including its display name,
+    current value, whether it is keyframed (time-varying), whether keyframes are
+    supported, and its index within the effect.
+
+    Use get_clip_effects first to discover the match names of effects on a clip.
+
+    Common built-in effect match names:
+    - "AE.ADBE Motion" -- Position, Scale, Rotation, Anchor Point, Anti-flicker
+    - "AE.ADBE Opacity" -- Opacity, Blend Mode
+
+    Args:
+        sequence_id (str): The ID of the sequence containing the clip.
+        track_index (int): The index of the track containing the clip.
+            Track indices start at 0.
+        track_item_index (int): The index of the clip within the track.
+            Clip indices start at 0 for the first clip and increment left to right.
+        effect_match_name (str): The match name of the effect to inspect.
+            Use the matchName value returned by get_clip_effects.
+            Examples: "AE.ADBE Motion", "AE.ADBE Opacity", "AE.ADBE Gaussian Blur 2"
+        track_type (str, optional): The type of track. Defaults to "VIDEO".
+            Valid values: "VIDEO", "AUDIO"
+    """
+
+    command = createCommand("getEffectParameters", {
+        "sequenceId": sequence_id,
+        "trackIndex": track_index,
+        "trackItemIndex": track_item_index,
+        "effectMatchName": effect_match_name,
+        "trackType": track_type
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def set_effect_parameter(
+    sequence_id: str,
+    track_index: int,
+    track_item_index: int,
+    effect_match_name: str,
+    param_display_name: str,
+    value,
+    track_type: str = "VIDEO"
+):
+    """
+    Sets a parameter value on an effect applied to a clip.
+
+    This is a generic tool that can set any effect parameter by effect match name
+    and parameter display name. It works for built-in effects (Motion, Opacity)
+    and any user-added effects.
+
+    Use get_clip_effects to discover effects on a clip, then get_effect_parameters
+    to discover parameter names and their current values.
+
+    Value types:
+    - Numbers: Pass directly (e.g., 50.0 for Opacity, 720.0 for Scale)
+    - Booleans: Pass directly (e.g., true for Repeat Edge Pixels)
+    - Points (Position, Anchor Point): Pass as {"x": number, "y": number}
+      Example: {"x": 960.0, "y": 540.0} for center of a 1920x1080 sequence
+    - Colors: Pass as {"red": int, "green": int, "blue": int} with values 0-255
+
+    Common usage examples:
+    - Set clip position: effect_match_name="AE.ADBE Motion", param_display_name="Position", value={"x": 480, "y": 270}
+    - Set clip scale: effect_match_name="AE.ADBE Motion", param_display_name="Scale Height", value=50.0
+    - Set clip rotation: effect_match_name="AE.ADBE Motion", param_display_name="Rotation", value=45.0
+    - Set opacity: effect_match_name="AE.ADBE Opacity", param_display_name="Opacity", value=75
+    - Set blur amount: effect_match_name="AE.ADBE Gaussian Blur 2", param_display_name="Blurriness", value=25.0
+
+    Args:
+        sequence_id (str): The ID of the sequence containing the clip.
+        track_index (int): The index of the track containing the clip.
+            Track indices start at 0.
+        track_item_index (int): The index of the clip within the track.
+            Clip indices start at 0 for the first clip and increment left to right.
+        effect_match_name (str): The match name of the effect to modify.
+            Examples: "AE.ADBE Motion", "AE.ADBE Opacity", "AE.ADBE Gaussian Blur 2"
+        param_display_name (str): The display name of the parameter to set.
+            Examples: "Position", "Scale Height", "Rotation", "Opacity", "Blurriness"
+        value: The value to set. Type depends on the parameter:
+            - number for most parameters
+            - boolean for toggle parameters
+            - dict with "x" and "y" keys for point parameters (Position, Anchor Point)
+            - dict with "red", "green", "blue" keys (0-255) for color parameters
+        track_type (str, optional): The type of track. Defaults to "VIDEO".
+            Valid values: "VIDEO", "AUDIO"
+    """
+
+    command = createCommand("setEffectParameter", {
+        "sequenceId": sequence_id,
+        "trackIndex": track_index,
+        "trackItemIndex": track_item_index,
+        "effectMatchName": effect_match_name,
+        "paramName": param_display_name,
+        "value": value,
+        "trackType": track_type
+    })
+
+    return sendCommand(command)
+
+
+@mcp.tool()
+def get_effect_parameter_value(
+    sequence_id: str,
+    track_index: int,
+    track_item_index: int,
+    effect_match_name: str,
+    param_display_name: str,
+    time_ticks: int = 0,
+    track_type: str = "VIDEO"
+):
+    """
+    Reads the value of a specific effect parameter at a given time.
+
+    This is useful for reading the current state of an effect parameter or for
+    reading animated (keyframed) values at specific timestamps. For non-keyframed
+    parameters, the value is the same regardless of time.
+
+    Use get_clip_effects to discover effects, then get_effect_parameters to discover
+    parameter names.
+
+    Args:
+        sequence_id (str): The ID of the sequence containing the clip.
+        track_index (int): The index of the track containing the clip.
+            Track indices start at 0.
+        track_item_index (int): The index of the clip within the track.
+            Clip indices start at 0 for the first clip and increment left to right.
+        effect_match_name (str): The match name of the effect to read from.
+            Examples: "AE.ADBE Motion", "AE.ADBE Opacity", "AE.ADBE Gaussian Blur 2"
+        param_display_name (str): The display name of the parameter to read.
+            Examples: "Position", "Scale Height", "Rotation", "Opacity", "Blurriness"
+        time_ticks (int, optional): The time in ticks at which to read the value.
+            Defaults to 0 (start of the clip). For keyframed parameters, this
+            determines which point on the animation curve is sampled.
+            Premiere Pro uses 254016000000 ticks per second.
+        track_type (str, optional): The type of track. Defaults to "VIDEO".
+            Valid values: "VIDEO", "AUDIO"
+    """
+
+    command = createCommand("getEffectParameterValue", {
+        "sequenceId": sequence_id,
+        "trackIndex": track_index,
+        "trackItemIndex": track_item_index,
+        "effectMatchName": effect_match_name,
+        "paramDisplayName": param_display_name,
+        "timeTicks": time_ticks,
+        "trackType": track_type
+    })
+
+    return sendCommand(command)
+
+
 @mcp.resource("config://get_instructions")
 def get_instructions() -> str:
     """Read this first! Returns information and instructions on how to use Photoshop and this API"""
