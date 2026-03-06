@@ -220,13 +220,99 @@ const _exportFrame = async (sequence, filePath, seconds) => {
     let p = window.path.parse(filePath)
     let t = app.TickTime.createWithSeconds(seconds)
 
-    let out = await app.Exporter.exportSequenceFrame(sequence, t, p.name, p.dir, size.width, size.height)
+    const dirWithSep = p.dir + window.path.sep
 
-    let ps = `${p.dir}${window.path.sep}${p.name}`
-    let outPath = `${ps}.${fileType}`
+    console.log("=== EXPORT FRAME DEBUG ===")
+    console.log("filePath:", filePath)
+    console.log("fileType:", fileType)
+    console.log("parsed path:", JSON.stringify(p))
+    console.log("  p.base:", p.base)
+    console.log("  p.name:", p.name)
+    console.log("  p.ext:", p.ext)
+    console.log("  p.dir:", p.dir)
+    console.log("dirWithSep:", dirWithSep)
+    console.log("size:", JSON.stringify(size))
+    console.log("seconds:", seconds)
+
+    // Attempt 1: Full absolute path as filename
+    console.log("--- Attempt 1: filename=filePath (full path), filepath=dirWithSep ---")
+    console.log("  args:", filePath, dirWithSep, size.width, size.height)
+    let out1 = null
+    try {
+        out1 = await app.Exporter.exportSequenceFrame(sequence, t, filePath, dirWithSep, size.width, size.height)
+        console.log("  Attempt 1 result:", out1)
+    } catch (e) {
+        console.log("  Attempt 1 threw:", e.message || e)
+    }
+
+    // Attempt 2: Bare filename with extension (e.g., "frame.png")
+    console.log("--- Attempt 2: filename=p.base (bare name+ext), filepath=dirWithSep ---")
+    console.log("  args:", p.base, dirWithSep, size.width, size.height)
+    let out2 = null
+    try {
+        out2 = await app.Exporter.exportSequenceFrame(sequence, t, p.base, dirWithSep, size.width, size.height)
+        console.log("  Attempt 2 result:", out2)
+    } catch (e) {
+        console.log("  Attempt 2 threw:", e.message || e)
+    }
+
+    // Attempt 3: Stem only, no extension (e.g., "frame")
+    console.log("--- Attempt 3: filename=p.name (stem only), filepath=dirWithSep ---")
+    console.log("  args:", p.name, dirWithSep, size.width, size.height)
+    let out3 = null
+    try {
+        out3 = await app.Exporter.exportSequenceFrame(sequence, t, p.name, dirWithSep, size.width, size.height)
+        console.log("  Attempt 3 result:", out3)
+    } catch (e) {
+        console.log("  Attempt 3 threw:", e.message || e)
+    }
+
+    console.log("=== RESULTS SUMMARY ===")
+    console.log("  Attempt 1 (full path):", out1)
+    console.log("  Attempt 2 (base):", out2)
+    console.log("  Attempt 3 (stem):", out3)
+
+    // Check for files that may have been written
+    try {
+        const uxpFs = require("uxp").storage.localFileSystem
+        const folder = await uxpFs.getEntryForUrl("file:" + p.dir)
+        if (folder) {
+            const entries = await folder.getEntries()
+            const names = entries.map(e => e.name)
+            console.log("=== FILES IN OUTPUT DIR ===")
+            // Filter to only show files matching the stem to reduce noise
+            const relevant = names.filter(n => n.includes(p.name))
+            console.log("  Matching files:", JSON.stringify(relevant))
+            console.log("  All files:", JSON.stringify(names))
+        }
+    } catch (dirErr) {
+        console.log("Could not list output dir:", dirErr.message || dirErr)
+    }
+
+    console.log("=== END EXPORT FRAME DEBUG ===")
+
+    // Use whichever attempt succeeded, preferring attempt 1
+    let out = out1 || out2 || out3
+    let outPath
+
+    if (out1) {
+        // Full path as filename — API may or may not double the extension
+        outPath = window.path.join(p.dir, `${p.base}.${fileType}`)
+        console.log("Using attempt 1 outPath:", outPath)
+    } else if (out2) {
+        // Bare filename — API appends extension, so double extension
+        outPath = window.path.join(p.dir, `${p.base}.${fileType}`)
+        console.log("Using attempt 2 outPath:", outPath)
+    } else if (out3) {
+        // Stem only — API appends extension once, so single extension
+        outPath = window.path.join(p.dir, `${p.name}.${fileType}`)
+        console.log("Using attempt 3 outPath:", outPath)
+    } else {
+        outPath = window.path.join(p.dir, `${p.base}.${fileType}`)
+    }
 
     if(!out) {
-        throw new Error(`exportFrame : Could not save frame to [${outPath}]`);
+        throw new Error(`exportFrame : All attempts failed. Could not save frame to [${outPath}]. Check UXP console for debug output.`);
     }
 
     return outPath
