@@ -1563,7 +1563,110 @@ const consolidateTracks = async (command) => {
     };
 };
 
+const mergeTracks = async (command) => {
+    const options = command.options;
+    const sequenceId = options.sequenceId;
+    const sourceTrackIndex = options.sourceTrackIndex;
+    const targetTrackIndex = options.targetTrackIndex;
+
+    const project = await app.Project.getActiveProject();
+    const sequence = await _getSequenceFromId(sequenceId);
+    const editor = await app.SequenceEditor.getEditor(sequence);
+
+    // Get clips on both tracks
+    const sourceTrackData = await getTracks(sequence, TRACK_TYPE.VIDEO);
+    const sourceTrack = sourceTrackData.find((t) => t.index === sourceTrackIndex);
+    const targetTrack = sourceTrackData.find((t) => t.index === targetTrackIndex);
+
+    if (!sourceTrack || sourceTrack.tracks.length === 0) {
+        return { moved: 0, skipped: 0, message: "Source track has no clips." };
+    }
+    if (!targetTrack) {
+        // Target track is empty — all source clips can move
+    }
+
+    const targetRanges = targetTrack
+        ? targetTrack.tracks.map((c) => ({
+              start: BigInt(c.startTimeTicks),
+              end: BigInt(c.endTimeTicks),
+          }))
+        : [];
+
+    const verticalOffset = targetTrackIndex - sourceTrackIndex;
+    const moved = [];
+    const skipped = [];
+
+    // Check each source clip for overlap with target track
+    for (const clip of sourceTrack.tracks) {
+        const clipStart = BigInt(clip.startTimeTicks);
+        const clipEnd = BigInt(clip.endTimeTicks);
+
+        const overlaps = targetRanges.some(
+            (r) => clipStart < r.end && clipEnd > r.start
+        );
+
+        if (overlaps) {
+            skipped.push({ name: clip.name, index: clip.index, reason: "overlaps" });
+        } else {
+            moved.push({ name: clip.name, index: clip.index });
+            // Add this clip's range to target so subsequent checks account for it
+            targetRanges.push({ start: clipStart, end: clipEnd });
+        }
+    }
+
+    // Clone phase: move non-overlapping clips to target track
+    for (const m of moved) {
+        const trackItem = await getTrack(sequence, sourceTrackIndex, m.index, TRACK_TYPE.VIDEO);
+        const timeOffset = await app.TickTime.createWithTicks("0");
+
+        execute(() => {
+            const action = editor.createCloneTrackItemAction(
+                trackItem,
+                timeOffset,
+                verticalOffset,
+                0,
+                true,
+                false
+            );
+            return [action];
+        }, project);
+    }
+
+    // Remove phase: remove originals from source track (highest index first)
+    const removals = [...moved].sort((a, b) => b.index - a.index);
+
+    for (const rem of removals) {
+        const item = await getTrack(sequence, sourceTrackIndex, rem.index, TRACK_TYPE.VIDEO);
+        const trackItemSelection = await sequence.getSelection();
+        const existingItems = await trackItemSelection.getTrackItems();
+        for (const t of existingItems) {
+            await trackItemSelection.removeItem(t);
+        }
+        trackItemSelection.addItem(item, true);
+
+        execute(() => {
+            const action = editor.createRemoveItemsAction(
+                trackItemSelection,
+                false,
+                constants.MediaType.ANY,
+                false
+            );
+            return [action];
+        }, project);
+    }
+
+    return {
+        moved: moved.length,
+        skipped: skipped.length,
+        sourceTrack: sourceTrackIndex,
+        targetTrack: targetTrackIndex,
+        movedClips: moved.map((m) => m.name),
+        skippedClips: skipped,
+    };
+};
+
 const commandHandlers = {
+    mergeTracks,
     consolidateTracks,
     getSequenceTracks,
     getBatchMetadata,
