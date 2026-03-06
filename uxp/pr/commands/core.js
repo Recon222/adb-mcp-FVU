@@ -1401,7 +1401,170 @@ const getSequenceTracks = async (command) => {
     return result;
 };
 
+const consolidateTracks = async (command) => {
+    const options = command.options;
+    const sequenceId = options.sequenceId;
+    // "single" = only consolidate tracks that have exactly 1 clip (default)
+    // "all" = consolidate all tracks
+    const mode = options.mode || "single";
+    // Optional: track indices to leave untouched
+    const protectedTracks = options.protectedTracks || [];
+
+    const project = await app.Project.getActiveProject();
+    const sequence = await _getSequenceFromId(sequenceId);
+    const editor = await app.SequenceEditor.getEditor(sequence);
+
+    // 1. Gather all video tracks with their clips
+    const allTracks = await getTracks(sequence, TRACK_TYPE.VIDEO);
+
+    // Separate tracks into "keep" (multi-clip or protected) and "candidates" (to consolidate)
+    const candidateClips = [];  // clips we want to move
+    const occupiedRanges = [];  // ranges on tracks we won't touch (used for target packing)
+
+    for (const track of allTracks) {
+        const isProtected = protectedTracks.includes(track.index);
+        const isSingle = track.tracks.length === 1;
+        const isCandidate = !isProtected && (mode === "all" || (mode === "single" && isSingle));
+
+        if (isCandidate) {
+            for (const clip of track.tracks) {
+                candidateClips.push({
+                    trackIndex: track.index,
+                    clipIndex: clip.index,
+                    name: clip.name,
+                    startTicks: BigInt(clip.startTimeTicks),
+                    endTicks: BigInt(clip.endTimeTicks),
+                });
+            }
+        } else {
+            // This track stays — its ranges are "occupied" if we pack onto it
+            // But we only pack onto fresh target tracks, not existing multi-clip ones
+        }
+    }
+
+    if (candidateClips.length === 0) {
+        return { moved: 0, message: "No clips to consolidate." };
+    }
+
+    // 2. Sort candidate clips by start time for greedy packing
+    candidateClips.sort((a, b) =>
+        a.startTicks < b.startTicks ? -1 : a.startTicks > b.startTicks ? 1 : 0
+    );
+
+    // 3. Greedy bin-pack: assign each clip to the lowest-index target "bin"
+    //    where it doesn't overlap any already-assigned clip.
+    //    Each bin will become one consolidated track.
+    const bins = []; // each bin is an array of clips with their time ranges
+
+    for (const clip of candidateClips) {
+        let placed = false;
+        for (const bin of bins) {
+            const overlaps = bin.some(
+                (existing) => clip.startTicks < existing.endTicks && clip.endTicks > existing.startTicks
+            );
+            if (!overlaps) {
+                bin.push(clip);
+                placed = true;
+                break;
+            }
+        }
+        if (!placed) {
+            bins.push([clip]);
+        }
+    }
+
+    // 4. Find the lowest available track indices for our consolidated bins.
+    //    We'll use the source tracks of the candidate clips themselves.
+    //    Sort candidate track indices and use the lowest N for our bins.
+    const candidateTrackIndices = [...new Set(candidateClips.map((c) => c.trackIndex))].sort((a, b) => a - b);
+    const targetTrackIndices = candidateTrackIndices.slice(0, bins.length);
+
+    // 5. Build the move plan: for each clip, determine source and target track
+    const moves = [];
+    for (let binIdx = 0; binIdx < bins.length; binIdx++) {
+        const targetTrack = targetTrackIndices[binIdx];
+        for (const clip of bins[binIdx]) {
+            if (clip.trackIndex !== targetTrack) {
+                moves.push({
+                    clip,
+                    sourceTrack: clip.trackIndex,
+                    targetTrack,
+                    verticalOffset: targetTrack - clip.trackIndex,
+                });
+            }
+            // If clip is already on its target track, no move needed
+        }
+    }
+
+    // 6. Execute: clone clips to target tracks, then remove originals
+    //    We must clone first, then remove, to avoid index shifting issues.
+    //    Process removals from highest track index down.
+
+    // Clone phase
+    for (const move of moves) {
+        const trackItem = await getTrack(sequence, move.sourceTrack, move.clip.clipIndex, TRACK_TYPE.VIDEO);
+        const timeOffset = await app.TickTime.createWithTicks("0");
+
+        execute(() => {
+            const action = editor.createCloneTrackItemAction(
+                trackItem,
+                timeOffset,
+                move.verticalOffset,  // video track offset
+                0,                    // audio track offset
+                true,                 // alignToVideo
+                false                 // isInsert = false (overwrite)
+            );
+            return [action];
+        }, project);
+    }
+
+    // Remove phase: collect originals that moved, remove from highest track first
+    const removals = moves.map((m) => ({
+        trackIndex: m.sourceTrack,
+        clipIndex: m.clip.clipIndex,
+    }));
+    // Sort by track index descending, then clip index descending to avoid index shifts
+    removals.sort((a, b) => b.trackIndex - a.trackIndex || b.clipIndex - a.clipIndex);
+
+    for (const rem of removals) {
+        const item = await getTrack(sequence, rem.trackIndex, rem.clipIndex, TRACK_TYPE.VIDEO);
+        const trackItemSelection = await sequence.getSelection();
+        const existingItems = await trackItemSelection.getTrackItems();
+        for (const t of existingItems) {
+            await trackItemSelection.removeItem(t);
+        }
+        trackItemSelection.addItem(item, true);
+
+        execute(() => {
+            const action = editor.createRemoveItemsAction(
+                trackItemSelection,
+                false,  // rippleDelete = false
+                constants.MediaType.ANY,
+                false   // shiftOverlapping = false
+            );
+            return [action];
+        }, project);
+    }
+
+    // 7. Report results
+    const emptyTrackCount = candidateTrackIndices.length - bins.length;
+
+    return {
+        moved: moves.length,
+        clipsProcessed: candidateClips.length,
+        binsUsed: bins.length,
+        tracksFreed: emptyTrackCount,
+        targetTracks: targetTrackIndices,
+        plan: moves.map((m) => ({
+            clip: m.clip.name,
+            from: `V${m.sourceTrack}`,
+            to: `V${m.targetTrack}`,
+        })),
+    };
+};
+
 const commandHandlers = {
+    consolidateTracks,
     getSequenceTracks,
     getBatchMetadata,
     getProjectMetadata,
