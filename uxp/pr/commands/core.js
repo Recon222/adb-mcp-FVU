@@ -1563,6 +1563,38 @@ const consolidateTracks = async (command) => {
     };
 };
 
+const shiftTrackClips = async (command) => {
+    const options = command.options;
+    const sequenceId = options.sequenceId;
+    const trackIndex = options.trackIndex;
+    const trackType = options.trackType || "VIDEO";
+    const offsetTicks = options.offsetTicks; // positive = right, negative = left
+
+    const project = await app.Project.getActiveProject();
+    const sequence = await _getSequenceFromId(sequenceId);
+
+    const items = await getTrackItems(sequence, trackIndex, trackType);
+
+    if (!items || items.length === 0) {
+        return { shifted: 0, message: "Track has no clips." };
+    }
+
+    const shiftTick = await app.TickTime.createWithTicks(offsetTicks.toString());
+
+    for (const item of items) {
+        execute(() => {
+            return [item.createMoveAction(shiftTick)];
+        }, project);
+    }
+
+    return {
+        shifted: items.length,
+        trackIndex,
+        trackType,
+        offsetTicks,
+    };
+};
+
 const mergeTracks = async (command) => {
     const options = command.options;
     const sequenceId = options.sequenceId;
@@ -1666,6 +1698,7 @@ const mergeTracks = async (command) => {
 };
 
 const commandHandlers = {
+    shiftTrackClips,
     mergeTracks,
     consolidateTracks,
     getSequenceTracks,
