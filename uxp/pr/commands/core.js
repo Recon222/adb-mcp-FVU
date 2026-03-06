@@ -1563,6 +1563,60 @@ const consolidateTracks = async (command) => {
     };
 };
 
+const shiftTracksByAddress = async (command) => {
+    const options = command.options;
+    const sequenceId = options.sequenceId;
+    const address = options.address;
+    const offsetTicks = options.offsetTicks;
+
+    const project = await app.Project.getActiveProject();
+    const sequence = await _getSequenceFromId(sequenceId);
+
+    const allTracks = await getTracks(sequence, TRACK_TYPE.VIDEO);
+    const addressLower = address.toLowerCase();
+
+    // Find matching clips across all tracks
+    const shiftTick = await app.TickTime.createWithTicks(offsetTicks.toString());
+    let totalClips = 0;
+    const affectedTracks = new Set();
+    const shiftedClips = [];
+
+    for (const track of allTracks) {
+        const items = await getTrackItems(sequence, track.index, TRACK_TYPE.VIDEO);
+        let clipIdx = 0;
+        for (const item of items) {
+            const clipData = track.tracks[clipIdx];
+            clipIdx++;
+            if (clipData && clipData.name.toLowerCase().includes(addressLower)) {
+                execute(() => {
+                    return [item.createMoveAction(shiftTick)];
+                }, project);
+                totalClips++;
+                affectedTracks.add(track.index);
+                shiftedClips.push(clipData.name);
+            }
+        }
+    }
+
+    if (totalClips === 0) {
+        return {
+            shifted: 0,
+            tracksAffected: 0,
+            address,
+            message: `No clips found matching "${address}".`,
+        };
+    }
+
+    return {
+        shifted: totalClips,
+        tracksAffected: affectedTracks.size,
+        trackIndices: [...affectedTracks].sort((a, b) => a - b),
+        address,
+        offsetTicks,
+        shiftedClips,
+    };
+};
+
 const shiftTrackClips = async (command) => {
     const options = command.options;
     const sequenceId = options.sequenceId;
@@ -1698,6 +1752,7 @@ const mergeTracks = async (command) => {
 };
 
 const commandHandlers = {
+    shiftTracksByAddress,
     shiftTrackClips,
     mergeTracks,
     consolidateTracks,
