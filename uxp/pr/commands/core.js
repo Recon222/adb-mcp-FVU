@@ -1297,7 +1297,92 @@ const exportSequence = async (command) => {
     await manager.exportSequence(sequence, constants.ExportType.IMMEDIATELY, outputPath, presetPath);
 }
 
+const getBatchMetadata = async (command) => {
+    const options = command.options;
+    const requestedNames = options.itemNames; // array of names, or "all"
+    const requestedFields = options.fields || null; // optional array of field names to return
+
+    const project = await app.Project.getActiveProject();
+    const root = await project.getRootItem();
+
+    const { XMPMeta } = require("uxp").xmp;
+    const kPProPrivateProjectMetadataURI =
+        "http://ns.adobe.com/premierePrivateProjectMetaData/1.0/";
+
+    const allFieldNames = [
+        "Column.Intrinsic.Name",
+        "Column.Intrinsic.TapeName",
+        "Column.Intrinsic.LogNote",
+        "Column.Intrinsic.MediaStart",
+        "Column.Intrinsic.MediaEnd",
+        "Column.Intrinsic.MediaDuration",
+        "Column.Intrinsic.VideoInfo",
+        "Column.Intrinsic.AudioInfo",
+        "Column.PropertyText.Description",
+        "Column.PropertyText.Comment",
+        "Column.PropertyText.Scene",
+        "Column.PropertyText.Shot",
+        "Column.PropertyBool.Good",
+    ];
+
+    const fieldNamesToExtract = requestedFields || allFieldNames;
+
+    // Collect all non-bin project items (recursively)
+    const collectItems = async (parentItem) => {
+        const items = await parentItem.getItems();
+        let result = [];
+        for (const item of items) {
+            const folderItem = app.FolderItem.cast(item);
+            if (folderItem) {
+                const children = await collectItems(folderItem);
+                result = result.concat(children);
+            } else {
+                result.push(item);
+            }
+        }
+        return result;
+    };
+
+    let projectItems;
+    if (requestedNames === "all") {
+        projectItems = await collectItems(root);
+    } else {
+        // Look up each requested item by name
+        projectItems = [];
+        for (const name of requestedNames) {
+            const item = await findProjectItem(name, project);
+            projectItems.push(item);
+        }
+    }
+
+    const results = [];
+    for (const projectItem of projectItems) {
+        const entry = { itemName: projectItem.name, fields: {} };
+        try {
+            const metadataXml = await app.Metadata.getProjectMetadata(projectItem);
+            const xmp = new XMPMeta(metadataXml);
+
+            for (const fieldName of fieldNamesToExtract) {
+                try {
+                    if (xmp.doesPropertyExist(kPProPrivateProjectMetadataURI, fieldName)) {
+                        const prop = xmp.getProperty(kPProPrivateProjectMetadataURI, fieldName);
+                        entry.fields[fieldName] = prop.value;
+                    }
+                } catch (e) {
+                    // Skip unreadable fields
+                }
+            }
+        } catch (e) {
+            entry.error = `Failed to read metadata: ${e.message || e}`;
+        }
+        results.push(entry);
+    }
+
+    return { items: results, count: results.length };
+};
+
 const commandHandlers = {
+    getBatchMetadata,
     getProjectMetadata,
     getXMPMetadata,
     setProjectMetadata,
