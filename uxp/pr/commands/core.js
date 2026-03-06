@@ -15,6 +15,7 @@ const {
     execute,
     getTrack,
     getTrackItems,
+    getTracks,
     getProjectContentInfo
 } = require("./utils.js")
 
@@ -1381,7 +1382,27 @@ const getBatchMetadata = async (command) => {
     return { items: results, count: results.length };
 };
 
+const getSequenceTracks = async (command) => {
+    const options = command.options;
+    const sequenceId = options.sequenceId;
+    const trackType = options.trackType; // "VIDEO", "AUDIO", or undefined for both
+
+    const sequence = await _getSequenceFromId(sequenceId);
+
+    let result = {};
+
+    if (!trackType || trackType === "VIDEO") {
+        result.videoTracks = await getTracks(sequence, TRACK_TYPE.VIDEO);
+    }
+    if (!trackType || trackType === "AUDIO") {
+        result.audioTracks = await getTracks(sequence, TRACK_TYPE.AUDIO);
+    }
+
+    return result;
+};
+
 const commandHandlers = {
+    getSequenceTracks,
     getBatchMetadata,
     getProjectMetadata,
     getXMPMetadata,
