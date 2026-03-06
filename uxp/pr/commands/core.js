@@ -212,110 +212,130 @@ const createProject = async (command) => {
 
 
 const _exportFrame = async (sequence, filePath, seconds) => {
+    // Normalize everything to forward slashes (Adobe UXP prefers this on Windows)
+    const normalized = filePath.replace(/\\/g, '/');
+    const p = window.path.parse(normalized);
 
-    const fileType = filePath.split('.').pop()
+    const size = await sequence.getFrameSize();
+    const t = await app.TickTime.createWithSeconds(seconds);
 
-    let size = await sequence.getFrameSize()
+    // Directory with trailing forward slash — NEVER use path.sep on Windows
+    const dir = p.dir.endsWith('/') ? p.dir : p.dir + '/';
 
-    let p = window.path.parse(filePath)
-    let t = app.TickTime.createWithSeconds(seconds)
+    console.log("=== EXPORT FRAME DIAGNOSTIC ===");
+    console.log("Input filePath:", filePath);
+    console.log("Normalized:", normalized);
+    console.log("p.base:", p.base, "p.name:", p.name, "p.ext:", p.ext, "p.dir:", p.dir);
+    console.log("dir (with trailing /):", dir);
+    console.log("size.width:", size.width, "size.height:", size.height);
+    console.log("seconds:", seconds);
 
-    const dirWithSep = p.dir + window.path.sep
+    // --- Pre-flight: test JS write access via UXP storage API ---
+    const { localFileSystem, types } = require('uxp').storage;
 
-    console.log("=== EXPORT FRAME DEBUG ===")
-    console.log("filePath:", filePath)
-    console.log("fileType:", fileType)
-    console.log("parsed path:", JSON.stringify(p))
-    console.log("  p.base:", p.base)
-    console.log("  p.name:", p.name)
-    console.log("  p.ext:", p.ext)
-    console.log("  p.dir:", p.dir)
-    console.log("dirWithSep:", dirWithSep)
-    console.log("size:", JSON.stringify(size))
-    console.log("seconds:", seconds)
-
-    // Attempt 1: Full absolute path as filename
-    console.log("--- Attempt 1: filename=filePath (full path), filepath=dirWithSep ---")
-    console.log("  args:", filePath, dirWithSep, size.width, size.height)
-    let out1 = null
     try {
-        out1 = await app.Exporter.exportSequenceFrame(sequence, t, filePath, dirWithSep, size.width, size.height)
-        console.log("  Attempt 1 result:", out1)
+        const folderEntry = await localFileSystem.getEntryWithUrl("file:" + dir);
+        console.log("Pre-flight: Got folder entry, nativePath:", folderEntry.nativePath);
+        const testFile = await folderEntry.createFile("_preflight_test.txt", { overwrite: true });
+        await testFile.write("test");
+        console.log("Pre-flight: JS CAN write to", dir);
+        await testFile.delete();
+        console.log("Pre-flight: Cleaned up test file");
     } catch (e) {
-        console.log("  Attempt 1 threw:", e.message || e)
+        console.log("Pre-flight: JS CANNOT write to", dir, "Error:", e.message);
     }
 
-    // Attempt 2: Bare filename with extension (e.g., "frame.png")
-    console.log("--- Attempt 2: filename=p.base (bare name+ext), filepath=dirWithSep ---")
-    console.log("  args:", p.base, dirWithSep, size.width, size.height)
-    let out2 = null
+    // --- Attempt 1: Export using UXP folder entry nativePath ---
+    let out1 = null;
+    let uxpNativePath = null;
     try {
-        out2 = await app.Exporter.exportSequenceFrame(sequence, t, p.base, dirWithSep, size.width, size.height)
-        console.log("  Attempt 2 result:", out2)
+        const folderEntry = await localFileSystem.getEntryWithUrl("file:" + dir);
+        uxpNativePath = folderEntry.nativePath;
+        // Ensure trailing separator on nativePath
+        const uxpDir = uxpNativePath.endsWith('/') || uxpNativePath.endsWith('\\')
+            ? uxpNativePath
+            : uxpNativePath + '/';
+        console.log("Attempt 1: UXP nativePath dir:", uxpDir);
+        console.log("Attempt 1: filename:", p.base);
+        out1 = await app.Exporter.exportSequenceFrame(
+            sequence, t, p.base, uxpDir, size.width, size.height
+        );
+        console.log("Attempt 1 result (UXP nativePath + p.base):", out1);
     } catch (e) {
-        console.log("  Attempt 2 threw:", e.message || e)
+        console.log("Attempt 1 failed:", e.message);
     }
 
-    // Attempt 3: Stem only, no extension (e.g., "frame")
-    console.log("--- Attempt 3: filename=p.name (stem only), filepath=dirWithSep ---")
-    console.log("  args:", p.name, dirWithSep, size.width, size.height)
-    let out3 = null
+    // --- Attempt 2: Original approach (string dir + p.base) ---
+    let out2 = null;
     try {
-        out3 = await app.Exporter.exportSequenceFrame(sequence, t, p.name, dirWithSep, size.width, size.height)
-        console.log("  Attempt 3 result:", out3)
+        console.log("Attempt 2: filename:", p.base, "filepath:", dir);
+        out2 = await app.Exporter.exportSequenceFrame(
+            sequence, t, p.base, dir, size.width, size.height
+        );
+        console.log("Attempt 2 result (string dir + p.base):", out2);
     } catch (e) {
-        console.log("  Attempt 3 threw:", e.message || e)
+        console.log("Attempt 2 failed:", e.message);
     }
 
-    console.log("=== RESULTS SUMMARY ===")
-    console.log("  Attempt 1 (full path):", out1)
-    console.log("  Attempt 2 (base):", out2)
-    console.log("  Attempt 3 (stem):", out3)
-
-    // Check for files that may have been written
+    // --- Attempt 3: UXP nativePath + p.name (stem, no ext) ---
+    let out3 = null;
     try {
-        const uxpFs = require("uxp").storage.localFileSystem
-        const folder = await uxpFs.getEntryForUrl("file:" + p.dir)
-        if (folder) {
-            const entries = await folder.getEntries()
-            const names = entries.map(e => e.name)
-            console.log("=== FILES IN OUTPUT DIR ===")
-            // Filter to only show files matching the stem to reduce noise
-            const relevant = names.filter(n => n.includes(p.name))
-            console.log("  Matching files:", JSON.stringify(relevant))
-            console.log("  All files:", JSON.stringify(names))
+        if (uxpNativePath) {
+            const uxpDir = uxpNativePath.endsWith('/') || uxpNativePath.endsWith('\\')
+                ? uxpNativePath
+                : uxpNativePath + '/';
+            console.log("Attempt 3: filename:", p.name, "filepath:", uxpDir);
+            out3 = await app.Exporter.exportSequenceFrame(
+                sequence, t, p.name, uxpDir, size.width, size.height
+            );
+            console.log("Attempt 3 result (UXP nativePath + p.name):", out3);
+        } else {
+            console.log("Attempt 3 skipped: no UXP folder entry");
         }
-    } catch (dirErr) {
-        console.log("Could not list output dir:", dirErr.message || dirErr)
+    } catch (e) {
+        console.log("Attempt 3 failed:", e.message);
     }
 
-    console.log("=== END EXPORT FRAME DEBUG ===")
+    // --- List files in output directory to see what was actually written ---
+    try {
+        const folderEntry = await localFileSystem.getEntryWithUrl("file:" + dir);
+        const entries = await folderEntry.getEntries();
+        const relevant = entries
+            .filter(e => e.name.includes(p.name))
+            .map(e => e.name);
+        console.log("Files matching stem in output dir:", JSON.stringify(relevant));
+    } catch (e) {
+        console.log("Could not list output dir:", e.message);
+    }
 
-    // Use whichever attempt succeeded, preferring attempt 1
-    let out = out1 || out2 || out3
-    let outPath
+    console.log("=== RESULTS: out1:", out1, "out2:", out2, "out3:", out3, "===");
 
+    // Pick whichever succeeded
     if (out1) {
-        // Full path as filename — API may or may not double the extension
-        outPath = window.path.join(p.dir, `${p.base}.${fileType}`)
-        console.log("Using attempt 1 outPath:", outPath)
-    } else if (out2) {
-        // Bare filename — API appends extension, so double extension
-        outPath = window.path.join(p.dir, `${p.base}.${fileType}`)
-        console.log("Using attempt 2 outPath:", outPath)
-    } else if (out3) {
-        // Stem only — API appends extension once, so single extension
-        outPath = window.path.join(p.dir, `${p.name}.${fileType}`)
-        console.log("Using attempt 3 outPath:", outPath)
-    } else {
-        outPath = window.path.join(p.dir, `${p.base}.${fileType}`)
+        const outPath = (uxpNativePath.endsWith('/') || uxpNativePath.endsWith('\\')
+            ? uxpNativePath : uxpNativePath + '/') + p.base;
+        console.log("Returning attempt 1 path:", outPath);
+        return outPath;
+    }
+    if (out2) {
+        const outPath = `${dir}${p.base}`;
+        console.log("Returning attempt 2 path:", outPath);
+        return outPath;
+    }
+    if (out3) {
+        const uxpDir = uxpNativePath.endsWith('/') || uxpNativePath.endsWith('\\')
+            ? uxpNativePath : uxpNativePath + '/';
+        const outPath = uxpDir + p.name + p.ext;
+        console.log("Returning attempt 3 path:", outPath);
+        return outPath;
     }
 
-    if(!out) {
-        throw new Error(`exportFrame : All attempts failed. Could not save frame to [${outPath}]. Check UXP console for debug output.`);
-    }
-
-    return outPath
+    throw new Error(
+        `exportFrame : All attempts failed. Could not save frame to [${dir}${p.base}]. ` +
+        `Params: filename="${p.base}", filepath="${dir}", ` +
+        `width=${size.width}, height=${size.height}. ` +
+        `Check UXP debugger console for full diagnostic output.`
+    );
 }
 
 const exportFrame = async (command) => {
@@ -697,11 +717,16 @@ const getProjectMetadata = async (command) => {
         }
     }
 
-    return {
+    const result = {
         itemName: itemName,
         fields: fields,
-        rawXml: metadataXml
     };
+
+    if (options.includeRaw) {
+        result.rawXml = metadataXml;
+    }
+
+    return result;
 };
 
 
@@ -799,11 +824,16 @@ const getXMPMetadata = async (command) => {
     }
     if (Object.keys(mmFields).length > 0) metadata.mediaManagement = mmFields;
 
-    return {
+    const result = {
         itemName: itemName,
         metadata: metadata,
-        rawXml: xmpXml
     };
+
+    if (options.includeRaw) {
+        result.rawXml = xmpXml;
+    }
+
+    return result;
 };
 
 
@@ -941,25 +971,38 @@ const addMetadataProperty = async (command) => {
 };
 
 const getProjectPanelMetadata = async (command) => {
+    const options = command.options || {};
+    const includeInternal = options.includeInternal || false;
     const panelMetadataXml = await app.Metadata.getProjectPanelMetadata();
 
-    // The panel metadata is an XML string describing column configuration.
-    // Attempt to parse it into a more useful format using XMPMeta.
-    let parsed = null;
-    try {
-        const { XMPMeta } = require("uxp").xmp;
-        const xmp = new XMPMeta(panelMetadataXml);
-        // If parsing succeeds, serialize to a compact form
-        parsed = xmp.serialize();
-    } catch (e) {
-        // Not valid XMP -- may be a different XML format.
-        // Return raw string only.
+    // Parse <md.paths> XML into a structured columns array.
+    // Each <metadata_path> becomes {name, description, namespace, internal}.
+    const columns = [];
+    const pathRegex = /<metadata_path>([\s\S]*?)<\/metadata_path>/g;
+    let match;
+    while ((match = pathRegex.exec(panelMetadataXml)) !== null) {
+        const block = match[1];
+        const getTag = (tag) => {
+            const m = block.match(new RegExp(`<${tag}>(.*?)</${tag}>`));
+            return m ? m[1] : null;
+        };
+        const isInternal = getTag("internal") === "true";
+        if (!includeInternal && isInternal) continue;
+        columns.push({
+            name: getTag("entry_name"),
+            description: getTag("description"),
+            namespace: getTag("namespace"),
+            internal: isInternal,
+        });
     }
 
-    return {
-        rawXml: panelMetadataXml,
-        parsed: parsed
-    };
+    const result = { columns };
+
+    if (options.includeRaw) {
+        result.rawXml = panelMetadataXml;
+    }
+
+    return result;
 };
 
 

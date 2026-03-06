@@ -52,9 +52,14 @@ const onCommandPacket = async (packet) => {
 
         out.response = response;
         out.status = "SUCCESS";
-        out.sequences = await getSequences();
-        out.project = await getProjectInfo();
-        
+
+        // Only attach full state when the caller requests it
+        const includeState = command.options && command.options.includeState;
+        if (includeState) {
+            out.sequences = await getSequences();
+            out.project = await getProjectInfo();
+        }
+
     } catch (e) {
 
         console.log(e)
