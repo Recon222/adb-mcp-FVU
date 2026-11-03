@@ -265,6 +265,17 @@ const getSequences = async () => {
         let durationTicks = await endTime.ticksNumber
         let ticksPerSecond = TICKS_PER_SECOND
 
+        // Zero point = sequence start timecode offset (set via Sequence > Sequence Settings > Start Time)
+        let zeroPointTicks = "0";
+        let zeroPointSeconds = 0;
+        try {
+            const zeroPoint = await sequence.getZeroPoint();
+            zeroPointTicks = await zeroPoint.ticksNumber.toString();
+            zeroPointSeconds = await zeroPoint.seconds;
+        } catch(e) {
+            // getZeroPoint not available or returns error -- leave as 0
+        }
+
         out.push({
             isActive,
             name,
@@ -274,6 +285,8 @@ const getSequences = async () => {
             audioTracks,
             timebase,
             fps,
+            zeroPointTicks,
+            zeroPointSeconds,
             durationSeconds,
             durationTicks,
             ticksPerSecond

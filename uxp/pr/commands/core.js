@@ -1052,9 +1052,20 @@ const _serializeParamValue = (value) => {
         return _serializeParamValue(value.value);
     }
 
-    // PointF -- has x and y properties
+    // PointF -- has x and y properties (plain JS object)
     if (typeof value === 'object' && value.x !== undefined && value.y !== undefined) {
         return { x: value.x, y: value.y, _type: "point" };
+    }
+
+    // Native Premiere PointF -- wrapped as { value: <native PointF> } where the inner
+    // native PointF stringifies to "x,y". Detect by checking for a single "value" key
+    // whose string representation matches "number,number".
+    if (typeof value === 'object' && value !== null && Object.keys(value).length === 1 && value.value !== undefined) {
+        const str = String(value.value);
+        const parts = str.split(',');
+        if (parts.length === 2 && !isNaN(parseFloat(parts[0])) && !isNaN(parseFloat(parts[1]))) {
+            return { x: parseFloat(parts[0]), y: parseFloat(parts[1]), _type: "point" };
+        }
     }
 
     // Color -- has red, green, blue properties
@@ -1199,11 +1210,12 @@ const setEffectParameter = async (command) => {
         );
     }
 
-    // Handle PointF values -- convert {x, y} dict to actual value for createKeyframe
+    // Handle PointF values -- app.PointF is a constructor in the Premiere UXP API.
+    // createKeyframe() requires a native PointF, not a plain JS {x, y} object.
     if (typeof value === 'object' && value !== null) {
         if (value.x !== undefined && value.y !== undefined) {
-            // Point value -- createKeyframe should accept {x, y} objects
-            value = value;
+            // 2D spatial param -- construct native PointF via constructor
+            value = new app.PointF(value.x, value.y);
         } else if (value.red !== undefined && value.green !== undefined && value.blue !== undefined) {
             // Color value -- pass through for createKeyframe
             value = value;
